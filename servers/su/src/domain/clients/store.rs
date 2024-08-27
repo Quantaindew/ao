@@ -509,33 +509,34 @@ impl DataStore for StoreClient {
         not just an assignment we need to check that it
         doesnt already exist.
     */
-    fn check_existing_message(&self, message: &Message) -> Result<(), StoreErrorType> {
-        match &message.message {
-            Some(m) => {
-                match self.get_message(&m.id) {
-                    Ok(parsed) => {
-                        /*
-                            If the message already exists and it contains
-                            an actual message (it is not just an assignment)
-                            then throw an error to avoid duplicate data items
-                            being written
-                        */
-                        match parsed.message {
-                            Some(_) => Err(StoreErrorType::MessageExists(
-                                "Message already exists".to_string(),
-                            )),
-                            None => Ok(()),
-                        }
-                    }
-                    // The message wasnt found at all so it can be written
-                    Err(StoreErrorType::NotFound(_)) => Ok(()),
-                    // Some other error happened
-                    Err(_) => Err(StoreErrorType::DatabaseError(
-                        "Error checking message".to_string(),
+    fn check_existing_message(&self, message_id: &String) -> Result<(), StoreErrorType> {
+        match self.get_message(&message_id) {
+            Ok(parsed) => {
+                /*
+                    If the message already exists and it contains
+                    an actual message (it is not just an assignment)
+                    then throw an error to avoid duplicate data items
+                    being written
+                */
+                match parsed.message {
+                    Some(_) => Err(StoreErrorType::MessageExists(
+                        "Message already exists".to_string(),
                     )),
+                    /*
+                      this is an assignment so its ok, although currently
+                      this method is not used to check the assingment ids
+                      this is still here in case someone calls it with
+                      the assignment id in the future
+                    */
+                    None => Ok(()),
                 }
             }
-            None => Ok(()),
+            // The message wasnt found at all so it can be written
+            Err(StoreErrorType::NotFound(_)) => Ok(()),
+            // Some other error happened
+            Err(_) => Err(StoreErrorType::DatabaseError(
+                "Error checking message".to_string(),
+            )),
         }
     }
 
@@ -546,8 +547,6 @@ impl DataStore for StoreClient {
     ) -> Result<String, StoreErrorType> {
         use super::schema::messages::dsl::*;
         let conn = &mut self.get_conn()?;
-
-        self.check_existing_message(message)?;
 
         let new_message = NewMessage {
             process_id: &message.process_id()?,
@@ -1092,6 +1091,7 @@ mod bytestore {
             &self,
             ids: Vec<(String, Option<String>, String, String)>,
         ) -> Result<DashMap<(String, Option<String>, String, String), Vec<u8>>, String> {
+            let max_memory_usage = self.config.max_read_memory;
             let binaries = Arc::new(DashMap::new());
             let db = match self.db.read() {
                 Ok(r) => r,
@@ -1099,11 +1099,24 @@ mod bytestore {
             };
 
             if let Some(ref db) = *db {
+                let mut total_memory_usage: usize = 0;
+
                 for id in ids {
                     let binaries = binaries.clone();
-
                     let key = ByteStore::create_key(&id.0, &id.1, &id.2, &id.3);
                     if let Ok(Some(value)) = db.get(&key) {
+                        /*
+                          This is added here because really large message lists
+                          with large messages are filling up the machines memory
+                          and freezing it.
+                        */
+                        total_memory_usage += value.len();
+                        if total_memory_usage > max_memory_usage {
+                            return Err(format!(
+                                "Memory usage exceeded the limit: {} bytes",
+                                max_memory_usage
+                            ));
+                        }
                         binaries.insert(id.clone(), value);
                     }
                 }
