@@ -27,10 +27,15 @@ describe('sendDataItemWith', () => {
           writeDataItem: async (res) => ({
             ...res,
             id: 'scheduler-id',
-            timestamp: 1234
+            timestamp: 1234567
           }),
           locateScheduler: async () => ({ url: 'url-123' }),
-          locateProcess: (res) => res,
+          locateProcess: async (res) => {
+            return ({
+              url: 'url-1234',
+              address: 'address-123'
+            })
+          },
           fetchResult: (res) => res,
           crank: () => {
             cranked = true
@@ -47,7 +52,7 @@ describe('sendDataItemWith', () => {
         }).toPromise()
 
         assert.equal(result.schedulerTx.id, 'scheduler-id')
-        assert.equal(result.schedulerTx.suUrl, 'url-123')
+        assert.equal(result.schedulerTx.timestamp, 1234567)
 
         await crank().toPromise()
         assert.ok(!cranked)
@@ -69,7 +74,7 @@ describe('sendDataItemWith', () => {
           writeDataItem: async (res) => ({
             ...res,
             id: 'scheduler-id',
-            timestamp: 1234
+            timestamp: 1234567
           }),
           locateScheduler: async () => ({ url: 'url-123' }),
           locateProcess: (res) => res,
@@ -94,7 +99,7 @@ describe('sendDataItemWith', () => {
 
         assert.ok(cranked)
         assert.equal(result.schedulerTx.id, 'scheduler-id')
-        assert.equal(result.schedulerTx.suUrl, 'url-123')
+        assert.equal(result.schedulerTx.timestamp, 1234567)
       })
     })
   })
